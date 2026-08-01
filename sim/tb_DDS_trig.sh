@@ -1,4 +1,4 @@
-nvc -a DDS_trig.vhd
+nvc -a ../src/DDS_trig.vhd
 
 nvc -a tb_DDS_trig.vhd
 
