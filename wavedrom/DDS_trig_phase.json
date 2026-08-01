@@ -1,0 +1,7 @@
+{ signal: [
+    { name: "CLK_I",      wave: "p........." },
+    { name: "EN_I",       wave: "0.1..0.1.0"},
+    { name: "PHASE_I",    wave: "0.555x.55x", data: ["ph1", "ph2", "ph3", "ph4", "ph5"] },
+    { name: "SINE_O",     wave: "0.333..33.", "data": ["s1", "s2", "s3", "s4", "s5"] },
+    { name: "COSINE_O",   wave: "0.444..44.", "data": ["c1", "c2", "c3", "c4", "c5"] },
+]}

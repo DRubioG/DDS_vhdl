@@ -1,3 +1,24 @@
+--! Diagramas de tiempo
+--! ==
+
+--! G_TYPE = CONT
+--! --
+--! { signal: [
+--!     { name: "CLK_I",      wave: "p........." },
+--!     { name: "EN_I",       wave: "0.1..0.1.0" },
+--!     { name: "SINE_O",     wave: "0.333..33.", "data": ["s1", "s2", "s3", "s4", "s5"] },
+--!     { name: "COSINE_O",   wave: "0.444..44.", "data": ["c1", "c2", "c3", "c4", "c5"] },
+--! ]}
+--! G_TYPE = PHASE
+--! --
+--! { signal: [
+--!     { name: "CLK_I",      wave: "p........." },
+--!     { name: "EN_I",       wave: "0.1..0.1.0"},
+--!     { name: "PHASE_I",    wave: "0.555x.55x", data: ["ph1", "ph2", "ph3", "ph4", "ph5"] },
+--!     { name: "SINE_O",     wave: "0.333..33.", "data": ["s1", "s2", "s3", "s4", "s5"] },
+--!     { name: "COSINE_O",   wave: "0.444..44.", "data": ["c1", "c2", "c3", "c4", "c5"] },
+--! ]}
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -5,12 +26,19 @@ use ieee.math_real.all;
 
 entity DDS_trig is
   generic (
-    --! Fase inicial de las señales.
-    G_INIT_PHASE : integer range 0 to 359;
     --! Número de muestras a generar.
     G_N_SAMPLES : integer := 360;
+    --! Fase inicial de las señales. Rango[0, G_N_SAMPLES-1]
+    G_INIT_PHASE : integer range 0 to G_N_SAMPLES - 1;
     --! Tamaño en bits de la señal de salida.
-    G_WIDTH : integer := 12
+    G_WIDTH : integer := 12;
+    --! Tipo de salida de muestras:
+    --! 
+    --! - **_"CONT"_**: forma continua, cuando *EN_I* está a '1' libera una muestra en el flanco de reloj.
+    --!
+    --! - **_"PHASE"_**: forma en la que el usuario puede elegir la muestra de salida. Para ello pone el
+    --! indice de la muestra en el puerto *PHASE_I*
+    G_TYPE : string := "CONT"
   );
   port (
     --! Reloj de entrada del módulo.
@@ -19,6 +47,11 @@ entity DDS_trig is
     RST_N_I : in std_logic;
     --! Puerto de habilitación del módulo. Activo a nivel alto.
     EN_I : in std_logic;
+    --! Este puerto permite selecionar el valor del índice para sacar la muestra. Para
+    --! que este puerto funcione es necesario tiene el genérico *G_TYPE* en **_PHASE_**.
+    --! 
+    --! El valor de la fase es el indice de la muestra que se quiere sacar de la DDS.
+    PHASE_I : in std_logic_vector(integer(log2(real(G_N_SAMPLES))) downto 0);
     --! Señal seno de salida.
     SINE_O : out std_logic_vector(G_WIDTH - 1 downto 0);
     --! Señal coseno de salida.
@@ -27,8 +60,10 @@ entity DDS_trig is
 end entity DDS_trig;
 
 architecture rtl of DDS_trig is
+
   --! Type para generar la memoria del DDS.
   type t_array_trig is array (0 to G_N_SAMPLES - 1) of std_logic_vector(G_WIDTH - 1 downto 0);
+
   --! Declaración de la función seno
   function generar_tabla_seno (puntos : integer) return t_array_trig is
     variable tabla_temporal             : t_array_trig;
@@ -39,11 +74,11 @@ architecture rtl of DDS_trig is
     variable sin_range                  : real;
   begin
     for i in 0 to puntos - 1 loop
-      -- Fórmula: sin(2 * pi * i / N)
+      -- Fórmula: sin((2 * pi * i / N) + (2 * pi * desfase / N))
       -- Cálculo del ángulo.
       angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
       -- Cálculo del desfase.
-      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(360));
+      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
       -- Cálculo del valor del seno.
       sine := sin(angulo + desfase);
       -- Normalización del seno para que vaya de [0, 1].
@@ -61,7 +96,7 @@ architecture rtl of DDS_trig is
   function generar_tabla_coseno (puntos : integer) return t_array_trig is
     variable tabla_temporal               : t_array_trig;
     variable angulo                       : real;
-    variable desfase                    : real;
+    variable desfase                      : real;
     variable cose                         : real;
     variable cos_abs                      : real;
     variable cos_range                    : real;
@@ -71,7 +106,7 @@ architecture rtl of DDS_trig is
       -- Cálculo del ángulo.
       angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
       -- Cálculo del desfase.
-      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(360));
+      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
       -- Cálculo del valor del coseno.
       cose := cos(angulo + desfase);
       -- Normalización del coseno para que vaya de [0, 1].
@@ -84,34 +119,58 @@ architecture rtl of DDS_trig is
     -- Retorno de la tabla de valores con el DDS.
     return tabla_temporal;
   end function;
+
   --! Array con la tabla de senos.
   constant t_TABLE_SAMPLES_SIN : t_array_trig := generar_tabla_seno(G_N_SAMPLES);
+
   --! Array con la table de cosenos.
   constant t_TABLE_SAMPLES_COS : t_array_trig := generar_tabla_coseno(G_N_SAMPLES);
 
-  --! Contador para sacar las muestras.
-  signal r_cont : unsigned(G_WIDTH - 1 downto 0);
+  --! Índice para sacar las muestras.
+  signal r_index : unsigned(integer(log2(real(G_N_SAMPLES))) downto 0);
 
 begin
   --! Valor de salida del seno.
-  SINE : SINE_O <= t_TABLE_SAMPLES_SIN(to_integer(r_cont));
+  SINE : SINE_O <= t_TABLE_SAMPLES_SIN(to_integer(r_index));
 
   --! Valor de salida del coseno.
-  COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_cont));
+  COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_index));
 
-  --! Generador de indices para el seno y el coseno.
-  COUNTER : process (CLK_I)
-  begin
-    if rising_edge(CLK_I) then
-      if RST_N_I = '0' then
-        r_cont <= (others => '0');
-      elsif EN_I = '1' then
-        r_cont <= r_cont + 1;
-        if r_cont >= G_N_SAMPLES - 1 then
-          r_cont <= (others => '0');
+  CONTINUOUS_gen : if G_TYPE = "CONT" generate
+    --! Generador de indices para el seno y el coseno.
+    COUNTER : process (CLK_I)
+    begin
+      if rising_edge(CLK_I) then
+        if RST_N_I = '0' then
+          r_index <= (others => '0');
+        elsif EN_I = '1' then
+          r_index <= r_index + 1;
+          if r_index >= G_N_SAMPLES - 1 then
+            r_index <= (others => '0');
+          end if;
         end if;
       end if;
-    end if;
-  end process;
+    end process;
 
-end architecture;
+  elsif G_TYPE = "PHASE" generate
+      --! Selector de muestra de salida de la DDS.
+      --! Para evitar problemas a nivel de que el usuario solicite una muestra
+      --! fuera del rango de la tabla, el índice retorna a 0.
+      PHASE_INDEX : process (CLK_I)
+      begin
+        if rising_edge(CLK_I) then
+          if RST_N_I = '0' then
+            r_index <= (others => '0');
+          elsif EN_I = '1' then
+            if to_integer(unsigned(PHASE_I)) < G_N_SAMPLES - 1 then
+              r_index <= unsigned(PHASE_I);
+            else
+              r_index <= (others => '0');
+            end if;
+          end if;
+        end if;
+      end process;
+
+    end generate;
+
+  end architecture;
