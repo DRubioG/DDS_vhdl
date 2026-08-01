@@ -22,6 +22,7 @@ begin
 
   DDS_trig_inst : entity work.DDS_trig
     generic map(
+      G_INIT_PHASE => 0,
       G_N_SAMPLES => G_N_SAMPLES,
       G_WIDTH     => G_WIDTH
     )

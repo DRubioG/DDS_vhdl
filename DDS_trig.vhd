@@ -5,6 +5,8 @@ use ieee.math_real.all;
 
 entity DDS_trig is
   generic (
+    --! Fase inicial de las señales.
+    G_INIT_PHASE : integer range 0 to 359;
     --! Número de muestras a generar.
     G_N_SAMPLES : integer := 360;
     --! Tamaño en bits de la señal de salida.
@@ -31,6 +33,7 @@ architecture rtl of DDS_trig is
   function generar_tabla_seno (puntos : integer) return t_array_trig is
     variable tabla_temporal             : t_array_trig;
     variable angulo                     : real;
+    variable desfase                    : real;
     variable sine                       : real;
     variable sin_abs                    : real;
     variable sin_range                  : real;
@@ -39,8 +42,10 @@ architecture rtl of DDS_trig is
       -- Fórmula: sin(2 * pi * i / N)
       -- Cálculo del ángulo.
       angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+      -- Cálculo del desfase.
+      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(360));
       -- Cálculo del valor del seno.
-      sine := sin(angulo);
+      sine := sin(angulo + desfase);
       -- Normalización del seno para que vaya de [0, 1].
       sin_abs := (sine + 1.0)/2.0;
       -- Conversión a nivel binario [0, 2^G_WIDTH-1].
@@ -56,6 +61,7 @@ architecture rtl of DDS_trig is
   function generar_tabla_coseno (puntos : integer) return t_array_trig is
     variable tabla_temporal               : t_array_trig;
     variable angulo                       : real;
+    variable desfase                    : real;
     variable cose                         : real;
     variable cos_abs                      : real;
     variable cos_range                    : real;
@@ -64,8 +70,10 @@ architecture rtl of DDS_trig is
       -- Fórmula: cos(2 * pi * i / N)
       -- Cálculo del ángulo.
       angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+      -- Cálculo del desfase.
+      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(360));
       -- Cálculo del valor del coseno.
-      cose := cos(angulo);
+      cose := cos(angulo + desfase);
       -- Normalización del coseno para que vaya de [0, 1].
       cos_abs := (cose + 1.0)/2.0;
       -- Conversión a nivel binario [0, 2^G_WIDTH-1].
@@ -92,7 +100,7 @@ begin
   COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_cont));
 
   --! Generador de indices para el seno y el coseno.
-COUNTER : process (CLK_I)
+  COUNTER : process (CLK_I)
   begin
     if rising_edge(CLK_I) then
       if RST_N_I = '0' then
