@@ -38,7 +38,14 @@ entity DDS_trig is
     --!
     --! - **_"PHASE"_**: forma en la que el usuario puede elegir la muestra de salida. Para ello pone el
     --! indice de la muestra en el puerto *PHASE_I*
-    G_TYPE : string := "CONT"
+    G_TYPE : string := "CONT";
+    --! Tipo de muestras generadas:
+    --!
+    --! - **_"POS"_**: Todas las muestras son positivas y van de [0, 2^G_WIDTH-1].
+    --!
+    --! - **_"POS_NEG"_**: Todas las muestras son positivas y negativas y van de [-2^(G_WIDTH-1), 2^(G_WIDTH-1)-1].
+    --! (_NOTA_: el valor 0 se considera positivo).
+    G_POS_NEG : string := "POS"
   );
   port (
     --! Reloj de entrada del módulo.
@@ -64,113 +71,192 @@ architecture rtl of DDS_trig is
   --! Type para generar la memoria del DDS.
   type t_array_trig is array (0 to G_N_SAMPLES - 1) of std_logic_vector(G_WIDTH - 1 downto 0);
 
-  --! Declaración de la función seno
-  function generar_tabla_seno (puntos : integer) return t_array_trig is
-    variable tabla_temporal             : t_array_trig;
-    variable angulo                     : real;
-    variable desfase                    : real;
-    variable sine                       : real;
-    variable sin_abs                    : real;
-    variable sin_range                  : real;
-  begin
-    for i in 0 to puntos - 1 loop
-      -- Fórmula: sin((2 * pi * i / N) + (2 * pi * desfase / N))
-      -- Cálculo del ángulo.
-      angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
-      -- Cálculo del desfase.
-      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
-      -- Cálculo del valor del seno.
-      sine := sin(angulo + desfase);
-      -- Normalización del seno para que vaya de [0, 1].
-      sin_abs := (sine + 1.0)/2.0;
-      -- Conversión a nivel binario [0, 2^G_WIDTH-1].
-      sin_range := sin_abs * real(2 ** G_WIDTH - 1);
-      -- Conversión de real a std_logic_vector.
-      tabla_temporal(i) := std_logic_vector(to_unsigned(integer(sin_range), G_WIDTH));
-    end loop;
-    -- Retorno de la tabla de valores con el DDS.
-    return tabla_temporal;
-  end function;
-
-  --! Declaración de la función coseno
-  function generar_tabla_coseno (puntos : integer) return t_array_trig is
-    variable tabla_temporal               : t_array_trig;
-    variable angulo                       : real;
-    variable desfase                      : real;
-    variable cose                         : real;
-    variable cos_abs                      : real;
-    variable cos_range                    : real;
-  begin
-    for i in 0 to puntos - 1 loop
-      -- Fórmula: cos(2 * pi * i / N)
-      -- Cálculo del ángulo.
-      angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
-      -- Cálculo del desfase.
-      desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
-      -- Cálculo del valor del coseno.
-      cose := cos(angulo + desfase);
-      -- Normalización del coseno para que vaya de [0, 1].
-      cos_abs := (cose + 1.0)/2.0;
-      -- Conversión a nivel binario [0, 2^G_WIDTH-1].
-      cos_range := cos_abs * real(2 ** G_WIDTH - 1);
-      -- Conversión de real a std_logic_vector.
-      tabla_temporal(i) := std_logic_vector(to_unsigned(integer(cos_range), G_WIDTH));
-    end loop;
-    -- Retorno de la tabla de valores con el DDS.
-    return tabla_temporal;
-  end function;
-
-  --! Array con la tabla de senos.
-  constant t_TABLE_SAMPLES_SIN : t_array_trig := generar_tabla_seno(G_N_SAMPLES);
-
-  --! Array con la table de cosenos.
-  constant t_TABLE_SAMPLES_COS : t_array_trig := generar_tabla_coseno(G_N_SAMPLES);
-
   --! Índice para sacar las muestras.
   signal r_index : unsigned(integer(log2(real(G_N_SAMPLES))) downto 0);
 
 begin
-  --! Valor de salida del seno.
-  SINE : SINE_O <= t_TABLE_SAMPLES_SIN(to_integer(r_index));
 
-  --! Valor de salida del coseno.
-  COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_index));
+  POSITIVE_SAMPLES : if G_POS_NEG = "POS" generate
 
-  CONTINUOUS_gen : if G_TYPE = "CONT" generate
-    --! Generador de indices para el seno y el coseno.
-    COUNTER : process (CLK_I)
+    --! Declaración de la función seno
+    function generar_tabla_seno (puntos : integer) return t_array_trig is
+      variable tabla_temporal             : t_array_trig;
+      variable angulo                     : real;
+      variable desfase                    : real;
+      variable sine                       : real;
+      variable sin_abs                    : real;
+      variable sin_range                  : real;
     begin
-      if rising_edge(CLK_I) then
-        if RST_N_I = '0' then
-          r_index <= (others => '0');
-        elsif EN_I = '1' then
-          r_index <= r_index + 1;
-          if r_index >= G_N_SAMPLES - 1 then
-            r_index <= (others => '0');
-          end if;
-        end if;
-      end if;
-    end process;
+      for i in 0 to puntos - 1 loop
+        -- Fórmula: sin((2 * pi * i / N) + (2 * pi * desfase / N))
+        -- Cálculo del ángulo.
+        angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+        -- Cálculo del desfase.
+        desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
+        -- Cálculo del valor del seno.
+        sine := sin(angulo + desfase);
+        -- Normalización del seno para que vaya de [0, 1].
+        sin_abs := (sine + 1.0)/2.0;
+        -- Conversión a nivel binario [0, 2^G_WIDTH-1].
+        sin_range := sin_abs * real(2 ** G_WIDTH - 1);
+        -- Conversión de real a std_logic_vector.
+        tabla_temporal(i) := std_logic_vector(to_unsigned(integer(sin_range), G_WIDTH));
+      end loop;
+      -- Retorno de la tabla de valores con el DDS.
+      return tabla_temporal;
+    end function;
 
-  elsif G_TYPE = "PHASE" generate
-      --! Selector de muestra de salida de la DDS.
-      --! Para evitar problemas a nivel de que el usuario solicite una muestra
-      --! fuera del rango de la tabla, el índice retorna a 0.
-      PHASE_INDEX : process (CLK_I)
+    --! Declaración de la función coseno
+    function generar_tabla_coseno (puntos : integer) return t_array_trig is
+      variable tabla_temporal               : t_array_trig;
+      variable angulo                       : real;
+      variable desfase                      : real;
+      variable cose                         : real;
+      variable cos_abs                      : real;
+      variable cos_range                    : real;
+    begin
+      for i in 0 to puntos - 1 loop
+        -- Fórmula: cos(2 * pi * i / N)
+        -- Cálculo del ángulo.
+        angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+        -- Cálculo del desfase.
+        desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
+        -- Cálculo del valor del coseno.
+        cose := cos(angulo + desfase);
+        -- Normalización del coseno para que vaya de [0, 1].
+        cos_abs := (cose + 1.0)/2.0;
+        -- Conversión a nivel binario [0, 2^G_WIDTH-1].
+        cos_range := cos_abs * real(2 ** G_WIDTH - 1);
+        -- Conversión de real a std_logic_vector.
+        tabla_temporal(i) := std_logic_vector(to_unsigned(integer(cos_range), G_WIDTH));
+      end loop;
+      -- Retorno de la tabla de valores con el DDS.
+      return tabla_temporal;
+    end function;
+
+    --! Array con la tabla de senos.
+    constant t_TABLE_SAMPLES_SIN : t_array_trig := generar_tabla_seno(G_N_SAMPLES);
+
+    --! Array con la table de cosenos.
+    constant t_TABLE_SAMPLES_COS : t_array_trig := generar_tabla_coseno(G_N_SAMPLES);
+
+  begin
+    --! Valor de salida del seno.
+    SINE : SINE_O <= t_TABLE_SAMPLES_SIN(to_integer(r_index));
+
+    --! Valor de salida del coseno.
+    COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_index));
+
+  elsif G_POS_NEG = "POS_NEG" generate
+
+      --! Declaración de la función seno
+      function generar_tabla_seno (puntos : integer) return t_array_trig is
+        variable tabla_temporal             : t_array_trig;
+        variable angulo                     : real;
+        variable desfase                    : real;
+        variable sine                       : real;
+        variable sin_abs                    : real;
+        variable sin_range                  : real;
+      begin
+        for i in 0 to puntos - 1 loop
+          -- Fórmula: sin((2 * pi * i / N) + (2 * pi * desfase / N))
+          -- Cálculo del ángulo.
+          angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+          -- Cálculo del desfase.
+          desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
+          -- Cálculo del valor del seno.
+          sine := sin(angulo + desfase);
+          -- Normalización del seno para que vaya de [-0.5, 0.5].
+          sin_abs := (sine)/2.0;
+          -- Conversión a nivel binario [-2^(G_WIDTH-1), 2^(G_WIDTH-1)-1].
+          -- Nota: el 0.5 es para compensar que el valor 0 está en el rango positivo.
+          sin_range := sin_abs * real(2 ** G_WIDTH - 1) - 0.5;
+          -- -- Conversión de real a std_logic_vector.
+          tabla_temporal(i) := std_logic_vector(to_signed(integer(sin_range), G_WIDTH));
+        end loop;
+        -- Retorno de la tabla de valores con el DDS.
+        return tabla_temporal;
+      end function;
+
+      --! Declaración de la función coseno
+      function generar_tabla_coseno (puntos : integer) return t_array_trig is
+        variable tabla_temporal               : t_array_trig;
+        variable angulo                       : real;
+        variable desfase                      : real;
+        variable cose                         : real;
+        variable cos_abs                      : real;
+        variable cos_range                    : real;
+      begin
+        for i in 0 to puntos - 1 loop
+          -- Fórmula: cos(2 * pi * i / N)
+          -- Cálculo del ángulo.
+          angulo := 2.0 * MATH_PI * (real(i) / real(puntos));
+          -- Cálculo del desfase.
+          desfase := 2.0 * MATH_PI * (real(G_INIT_PHASE)/real(puntos));
+          -- Cálculo del valor del coseno.
+          cose := cos(angulo + desfase);
+          -- Normalización del coseno para que vaya de [-0.5, 0.5].
+          cos_abs := (cose)/2.0;
+          -- Conversión a nivel binario [-2^(G_WIDTH-1), 2^(G_WIDTH-1)-1].
+          -- Nota: el 0.5 es para compensar que el valor 0 está en el rango positivo.
+          cos_range := cos_abs * real(2 ** G_WIDTH - 1) - 0.5;
+          -- Conversión de real a std_logic_vector.
+          tabla_temporal(i) := std_logic_vector(to_signed(integer(cos_range), G_WIDTH));
+        end loop;
+        -- Retorno de la tabla de valores con el DDS.
+        return tabla_temporal;
+      end function;
+
+      --! Array con la tabla de senos.
+      constant t_TABLE_SAMPLES_SIN : t_array_trig := generar_tabla_seno(G_N_SAMPLES);
+
+      --! Array con la table de cosenos.
+      constant t_TABLE_SAMPLES_COS : t_array_trig := generar_tabla_coseno(G_N_SAMPLES);
+
+    begin
+
+      --! Valor de salida del seno.
+      SINE : SINE_O <= t_TABLE_SAMPLES_SIN(to_integer(r_index));
+      --! Valor de salida del coseno.
+      COSINE : COSINE_O <= t_TABLE_SAMPLES_COS(to_integer(r_index));
+
+    end generate;
+
+    CONTINUOUS_gen : if G_TYPE = "CONT" generate
+      --! Generador de indices para el seno y el coseno.
+      COUNTER : process (CLK_I)
       begin
         if rising_edge(CLK_I) then
           if RST_N_I = '0' then
             r_index <= (others => '0');
           elsif EN_I = '1' then
-            if to_integer(unsigned(PHASE_I)) < G_N_SAMPLES - 1 then
-              r_index <= unsigned(PHASE_I);
-            else
+            r_index <= r_index + 1;
+            if r_index >= G_N_SAMPLES - 1 then
               r_index <= (others => '0');
             end if;
           end if;
         end if;
       end process;
 
-    end generate;
+    elsif G_TYPE = "PHASE" generate
+        --! Selector de muestra de salida de la DDS.
+        --! Para evitar problemas a nivel de que el usuario solicite una muestra
+        --! fuera del rango de la tabla, el índice retorna a 0.
+        PHASE_INDEX : process (CLK_I)
+        begin
+          if rising_edge(CLK_I) then
+            if RST_N_I = '0' then
+              r_index <= (others => '0');
+            elsif EN_I = '1' then
+              if to_integer(unsigned(PHASE_I)) < G_N_SAMPLES - 1 then
+                r_index <= unsigned(PHASE_I);
+              else
+                r_index <= (others => '0');
+              end if;
+            end if;
+          end if;
+        end process;
 
-  end architecture;
+      end generate;
+
+    end architecture;

@@ -30,7 +30,8 @@ begin
       G_INIT_PHASE => 0,
       G_N_SAMPLES  => G_N_SAMPLES,
       G_WIDTH      => G_WIDTH,
-      G_TYPE       => "PHASE"
+      G_TYPE       => "PHASE",
+      G_POS_NEG => "POS"
     )
     port map
     (
