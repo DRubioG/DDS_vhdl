@@ -27,11 +27,11 @@ use ieee.math_real.all;
 entity DDS_trig is
   generic (
     --! Número de muestras a generar.
-    G_N_SAMPLES : integer := 360;
+    G_N_SAMPLES : integer range 1 to integer'high := 360;
     --! Fase inicial de las señales. Rango[0, G_N_SAMPLES-1]
     G_INIT_PHASE : integer range 0 to G_N_SAMPLES - 1;
     --! Tamaño en bits de la señal de salida.
-    G_WIDTH : integer := 12;
+    G_WIDTH : integer range 1 to integer'high := 12;
     --! Tipo de salida de muestras:
     --! 
     --! - **_"CONT"_**: forma continua, cuando *EN_I* está a '1' libera una muestra en el flanco de reloj.
